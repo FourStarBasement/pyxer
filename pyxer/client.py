@@ -5,6 +5,7 @@ from .ws import MixerConnection
 class MixerClient:
     def __init__(self, **kwargs):
         self.http = HTTPClient()
+        self._ws = MixerConnection()
 
         self._channel_id = kwargs.get('channel_id')
         self._username = kwargs.get('username')
@@ -21,7 +22,7 @@ class MixerClient:
         await self.http.init()
 
         if self._username:
-            self._channel_id = await self.fetch_channel_id(self._username)
+            self._channel_id = await self.http.get_channel_id(self._username)['id']
 
         chat_data = await self.http.get_chat_info(self._channel_id)
 
@@ -31,6 +32,3 @@ class MixerClient:
     async def connect(self):
         # TODO: Start websocket connection
         return
-
-    async def fetch_channel_id(self, username: str):
-        return await self.http.get_channel_id(self._username)['id']
