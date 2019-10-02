@@ -1,6 +1,5 @@
-from .http import HTTPClient
-from .ws import MixerConnection
-
+from http import HTTPClient
+from ws import MixerConnection
 
 class MixerClient:
     def __init__(self, **kwargs):

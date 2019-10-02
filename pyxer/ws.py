@@ -1,5 +1,5 @@
 import websockets
-from .packet import Packet
+from packet import Packet
 
 
 class MixerConnection:
