@@ -1,42 +1,63 @@
-import asyncio
-import aiohttp
+from typing import Dict, Optional, List
+from yarl import URL
+from aiohttp import ClientSession
 
-from .route import Route
+
+class HTTPConfig:
+    client_secret: str
+    client_id: str
+    access_token: str
 
 
 class HTTPClient:
-    def __init__(self, connector=None, *, loop=None):
+    def __init__(self):
+        self.config = HTTPConfig()
         self.session = None
-        self.loop = asyncio.get_event_loop() if loop is None else loop
-        self.connector = connector
 
-    async def init(self):
-        self.session = aiohttp.ClientSession(connector=self.connector, loop=self.loop)
+    async def init(self, client_secret: str, client_id: str):
+        self.session = ClientSession()
+        self.config.client_secret = client_secret
+        self.config.client_id = client_id
 
-    async def request(self, route, **kwargs):
-        method = route.method
-        url = route.url
+    def update_token(self, access_token: str):
+        self.config.access_token = access_token
 
-        async with self.session.request(method, url, **kwargs) as r:
-            data = await r.json() if r.headers['content-type'] == 'application/json' else r.text(encoding='utf-8')
+    async def request(self, verb: str, endpoint: str, *, query: Optional[Dict[str, str]]=None, data: Optional[Dict[str, str]]=None):
+        url = URL.build(scheme="https", host="mixer.com", path=f"/api/v1/{endpoint}", query=query)
+        print(url)
+        async with self.session.request(verb, url, json=data) as r:
+            #data = await r.json() if r.headers['content-type'] == 'application/json' else await r.text(encoding='utf-8')
 
-            if 300 > r.status >= 200:
-                return data
+            if r.status != 204:
+                return await r.json()
 
-            if r.status == 429:
-                retry_after = data['retry_after'] / 1000.0
+    def get_shortcode(self, scope: List[str]):
+        scopes = " ".join(scope)
+        data = {
+            "client_id": self.config.client_id,
+            "client_secret": self.config.client_secret,
+            "scope": scopes
+        }
+        return self.request('POST', 'oauth/shortcode', data=data)
 
-                raise Exception('Rate limited! Retry after {} seconds.'.format(retry_after))
+    def verify_shortcode(self, handle: str):
+        return self.request('GET', f'oauth/shortcode/check/{handle}')
 
-            if r.status == 403:
-                raise Exception('Forbidden.')
-            elif r.status == 404:
-                raise Exception('Not Found.')
-            else:
-                raise Exception(data)
+    def get_tokens(self, token: str):
+        data = {
+            "client_id": self.config.client_id,
+            "client_secret": self.config.client_secret,
+            "grant_type": "authorization_code",
+            "code": token
+        }
+        return self.request('POST', 'oauth/token', data=data)
 
-    def get_channel_id(self, username: str):
-        return self.request(Route('GET', '/channels/{username}?fields=id', username=username))
+    def refresh_tokens(self, token: str):
+        data = {
+            "client_id": self.config.client_id,
+            "client_secret": self.config.client_secret,
+            "grant_type": "refresh_token",
+            "refresh_token": token
+        }
+        return self.request('POST', 'oauth/token', data=data)
 
-    def get_chat_info(self, channel_id: int):
-        return self.request(Route('GET', '/chats/{channel_id}', channel_id=channel_id))

@@ -1,34 +1,52 @@
+from typing import List
+import asyncio
+from webbrowser import open_new
+
 from .http import HTTPClient
-from .ws import MixerConnection
+from .oauth import OAuthHandler
+from .utils import as_go_link
 
 
 class MixerClient:
-    def __init__(self, **kwargs):
+    scopes: List[str]
+    http: HTTPClient
+    oauth: OAuthHandler
+    ws: WebsocketClient
+
+    def __init__(self, scopes: List[str]):
+        self.scopes = scopes
         self.http = HTTPClient()
-        self._ws = MixerConnection()
 
-        self._channel_id = kwargs.get('channel_id')
-        self._username = kwargs.get('username')
+    async def start(self, client_secret: str, client_id: str):
+        await self.http.init(client_secret, client_id)
 
-        if self._username and self._channel_id:
-            raise Exception('you can only use channel_id, **or** username, not both.')
+        data = await self.http.get_shortcode(self.scopes)
 
-        self.wss_addr = None
-        self.auth_key = ''
+        handle = data["handle"]
 
-        self._connection = None
+        code = data["code"]
+        url = as_go_link(code)
+        open_new(url)
 
-    async def login(self):
-        await self.http.init()
+        access_token, refresh_token = await self._wait_for_auth(handle)
 
-        if self._username:
-            self._channel_id = await self.http.get_channel_id(self._username)['id']
+        self.oauth = OAuthHandler(self.http, access_token, refresh_token)
 
-        chat_data = await self.http.get_chat_info(self._channel_id)
+    def run(self, client_secret: str, client_id: str):
+        asyncio.run(self.start(client_secret, client_id))
 
-        self.wss_addr = chat_data['endpoints']
-        self.auth_key = chat_data['authkey']
+    async def _wait_for_auth(self, handle: str):
+        while True:
+            response = await self.http.verify_shortcode(handle)
 
-    async def connect(self):
-        # TODO: Start websocket connection
-        return
+            try:
+                auth = response["code"]
+            except TypeError:
+                await asyncio.sleep(3)
+            else:
+                break
+
+        tokens = await self.http.get_tokens(auth)
+
+        return tokens["access_token"], tokens["refresh_token"]
+            
