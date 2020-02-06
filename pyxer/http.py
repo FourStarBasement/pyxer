@@ -22,10 +22,13 @@ class HTTPClient:
     def update_token(self, access_token: str):
         self.config.access_token = access_token
 
-    async def request(self, verb: str, endpoint: str, *, query: Optional[Dict[str, str]]=None, data: Optional[Dict[str, str]]=None):
+    async def request(self, verb: str, endpoint: str, *, query: Optional[Dict[str, str]]=None, data: Optional[Dict[str, str]]=None, headers: Optional[Dict[str, str]]={}):
         url = URL.build(scheme="https", host="mixer.com", path=f"/api/v1/{endpoint}", query=query)
-        print(url)
-        async with self.session.request(verb, url, json=data) as r:
+
+        if hasattr(self.config, 'access_token'):
+            headers['Authorization'] = f'Bearer {self.config.access_token}'
+
+        async with self.session.request(verb, url, json=data, headers=headers) as r:
             #data = await r.json() if r.headers['content-type'] == 'application/json' else await r.text(encoding='utf-8')
 
             if r.status != 204:
@@ -61,3 +64,8 @@ class HTTPClient:
         }
         return self.request('POST', 'oauth/token', data=data)
 
+    def get_current_user(self):
+        return self.request('GET', 'users/current')
+
+    def get_connection_info(self, channel_id: int):
+        return self.request('GET', f'chats/{channel_id}')

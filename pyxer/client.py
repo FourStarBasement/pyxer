@@ -1,8 +1,9 @@
-from typing import List
+from typing import List, Dict, Any
 import asyncio
 from webbrowser import open_new
 
 from .http import HTTPClient
+from .ws import WebSocketClient
 from .oauth import OAuthHandler
 from .utils import as_go_link
 
@@ -11,7 +12,8 @@ class MixerClient:
     scopes: List[str]
     http: HTTPClient
     oauth: OAuthHandler
-    ws: WebsocketClient
+    current_user: Dict[str, Any]
+    ws: WebSocketClient
 
     def __init__(self, scopes: List[str]):
         self.scopes = scopes
@@ -31,6 +33,19 @@ class MixerClient:
         access_token, refresh_token = await self._wait_for_auth(handle)
 
         self.oauth = OAuthHandler(self.http, access_token, refresh_token)
+
+        data = await self.http.get_current_user()
+
+        self.current_user = data
+
+        channel_id = data['channel']['id']
+        user_id = data['channel']['userId']
+
+        data = await self.http.get_connection_info(channel_id)
+
+        self.ws = WebSocketClient(data['endpoints'][0])
+
+        await self.ws.connect(channel_id, user_id, self.http.config.access_token, data['authkey'])
 
     def run(self, client_secret: str, client_id: str):
         asyncio.run(self.start(client_secret, client_id))
