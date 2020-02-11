@@ -20,6 +20,10 @@ class MixerClient:
         self.http = HTTPClient()
 
     async def start(self, client_secret: str, client_id: str):
+        await self.login(client_secret, client_id)
+        await self.connect()
+
+    async def login(self, client_secret: str, client_id: str):
         await self.http.init(client_secret, client_id)
 
         data = await self.http.get_shortcode(self.scopes)
@@ -38,14 +42,17 @@ class MixerClient:
 
         self.current_user = data
 
-        channel_id = data['channel']['id']
-        user_id = data['channel']['userId']
+    async def connect(self):
+        channel_id = self.current_user['channel']['id']
+        user_id = self.current_user['channel']['userId']
 
-        data = await self.http.get_connection_info(channel_id)
+        ws = WebSocketClient.start(self, channel_id=channel_id, user_id=user_id)
+        self.ws = await asyncio.wait_for(ws, timeout=50.0)
+        while True:
+            await self.ws.handle_message()
 
-        self.ws = WebSocketClient(data['endpoints'][0])
-
-        await self.ws.connect(channel_id, user_id, self.http.config.access_token, data['authkey'])
+    async def send(self, content: str):
+        await self.ws.send_message(content)
 
     def run(self, client_secret: str, client_id: str):
         asyncio.run(self.start(client_secret, client_id))
