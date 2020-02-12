@@ -1,7 +1,8 @@
 import json
+
 import websockets
 
-from .utils import get
+from .utils import get, as_snake_case
 
 
 class Packet:
@@ -90,7 +91,8 @@ class WebSocketClient(websockets.client.WebSocketClientProtocol):
 
         await self.send(packet)
 
-    async def handle(self, name, message):
+    async def handle(self, name: str, message: Packet):
+        name = as_snake_case(name)
         func_name = f'handle_{name}'
 
         try:
@@ -110,15 +112,49 @@ class WebSocketClient(websockets.client.WebSocketClientProtocol):
             try:
                 func = getattr(self, func_name)
             except AttributeError:
-                print('Could not find original method for reply ID:', id)
+                print('Could not find original method for reply ID:', id, 'Method:', method.method)
             else:
                 await func(method, message)
-
-    async def handle_WelcomeEvent(self, message: Packet):
-        await self.login(self.channel_id, self.user_id, self.auth_key)
     
-    async def handle_UserJoin(self, message: Packet):
+    async def dispatch(self, event_name: str):
+        print(event_name)
+
+    async def handle_welcome_event(self, message: Packet):
+        await self.login(self.channel_id, self.user_id, self.auth_key)
+
+        await self.dispatch('login')
+    
+    async def handle_user_join(self, message: Packet):
         print(message.data)
+
+        await self.dispatch('user_join')
+
+    async def handle_chat_message(self, message: Packet):
+        print(message.data)
+
+        # TODO: deserialize
+        # data: Dict[
+        #   channel: int
+        #   id: str
+        #   name: str
+        #   user_id: int
+        #   user_roles: List[str]
+        #   user_level: int
+        #   user_avatar: str
+        #   message: List[Dict[
+        #       type: str
+        #       data: str
+        #       text: str
+        #   ]]
+        #   meta: Dict[]
+        # ]
+
+        await self.dispatch('message')
 
     async def reply_auth(self, sent: Packet, reply: Packet):
         print(reply.data)
+
+        await self.dispatch('login_success')
+
+    async def reply_msg(self, sent: Packet, reply: Packet):
+        print(sent.dumped, reply.dumped)
