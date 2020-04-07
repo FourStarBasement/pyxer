@@ -4,35 +4,46 @@ from webbrowser import open_new
 
 from .http import HTTPClient
 from .ws import WebSocketClient
+from .scopes import Scopes
 from .oauth import OAuthHandler
 from .utils import as_go_link
+from .event import Listener
 
 
 class MixerClient:
-    scopes: List[str]
+    scopes: Scopes
     http: HTTPClient
     oauth: OAuthHandler
     current_user: Dict[str, Any]
     ws: WebSocketClient
 
-    def __init__(self, scopes: List[str]):
+    def __init__(self, scopes: Scopes):
         self.scopes = scopes
         self.http = HTTPClient()
+        self.listeners = []
 
-    async def start(self, client_secret: str, client_id: str):
-        await self.login(client_secret, client_id)
+    async def start(self, *, secret: str, id: str):
+        await self.login(secret=secret, id=id)
         await self.connect()
 
-    async def login(self, client_secret: str, client_id: str):
-        await self.http.init(client_secret, client_id)
+    def run(self, *, secret: str, id: str):
+        asyncio.run(self.start(secret=secret, id=id))
 
-        data = await self.http.get_shortcode(self.scopes)
+    async def login(self, *, secret: str, id: str, open_browser: bool=True):
+        await self.http.init(secret, id)
+
+        data = await self.http.get_shortcode(list(self.scopes))
 
         handle = data["handle"]
 
         code = data["code"]
         url = as_go_link(code)
-        open_new(url)
+
+        if open_browser:
+            open_new(url)
+            print("If your browser hasn't opened to the link, click here to login:", url)
+        else:
+            print("Click here to login:", url)
 
         access_token, refresh_token = await self._wait_for_auth(handle)
 
@@ -54,9 +65,6 @@ class MixerClient:
     async def send(self, content: str):
         await self.ws.send_message(content)
 
-    def run(self, client_secret: str, client_id: str):
-        asyncio.run(self.start(client_secret, client_id))
-
     async def _wait_for_auth(self, handle: str):
         while True:
             response = await self.http.verify_shortcode(handle)
@@ -64,11 +72,28 @@ class MixerClient:
             try:
                 auth = response["code"]
             except TypeError:
-                await asyncio.sleep(3)
+                await asyncio.sleep(2)
             else:
                 break
 
         tokens = await self.http.get_tokens(auth)
 
         return tokens["access_token"], tokens["refresh_token"]
-            
+
+    async def dispatch(self, event_name, *args, **kwargs):
+        for listener in self.listeners:
+            if listener.name == event_name:
+                await listener.execute(*args, **kwargs)
+
+    def event(self, coro):
+        def wrapper():
+            listener_name = ''
+
+            coro_name = coro.__name__
+            if coro_name.startswith('on_'):
+                listener_name = coro_name[3:]
+
+            ret = Listener(name=listener_name, callback=coro)
+            self.listeners.append(ret)
+            return ret
+        return wrapper()

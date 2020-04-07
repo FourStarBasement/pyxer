@@ -1,8 +1,10 @@
 import json
 
 import websockets
+import traceback
 
 from .utils import get, as_snake_case
+from .cache import MixerCache
 
 
 class Packet:
@@ -40,32 +42,20 @@ class WebSocketClient(websockets.client.WebSocketClientProtocol):
         ws = await websockets.connect(uri, extra_headers={'Client-ID': client.http.config.client_id}, klass=cls)
 
         ws.client = client
+        ws.cache = MixerCache(ws)
         ws.channel_id = channel_id
         ws.user_id = user_id
         ws.uri = uri
         ws.auth_key = auth_key
+        ws.client_dispatch = client.dispatch
 
         return ws
-
-    async def connect(self, channel_id: int, user_id: int, client_id: str, auth_key: str):
-        self.channel_id = channel_id
-        self.user_id = user_id
-        self.client_id = client_id
-        self.auth_key = auth_key
-        self.connection = await websockets.connect(self.uri, extra_headers={'Client-ID': client_id})
-
-        async for message in self.connection:
-            message = Packet.received(message)
-            if message.type == 'event':
-                await self.handle(message.event, message)
-            elif message.type == 'reply':
-                await self.reply(message)
 
     async def handle_message(self):
         try:
             msg = await self.recv()
-        except websockets.exceptions.ConnectionClosed as exc:
-            print(e)
+        except websockets.exceptions.ConnectionClosed:
+            traceback.print_exc()
         else:
             data = Packet.received(msg)
             if data.type == 'event':
@@ -116,8 +106,8 @@ class WebSocketClient(websockets.client.WebSocketClientProtocol):
             else:
                 await func(method, message)
     
-    async def dispatch(self, event_name: str):
-        print(event_name)
+    async def dispatch(self, event_name: str, *args, **kwargs):
+        await self.client_dispatch(event_name, *args, **kwargs)
 
     async def handle_welcome_event(self, message: Packet):
         await self.login(self.channel_id, self.user_id, self.auth_key)
@@ -125,12 +115,10 @@ class WebSocketClient(websockets.client.WebSocketClientProtocol):
         await self.dispatch('login')
     
     async def handle_user_join(self, message: Packet):
-        print(message.data)
 
-        await self.dispatch('user_join')
+        await self.dispatch('user_join', message)
 
     async def handle_chat_message(self, message: Packet):
-        print(message.data)
 
         # TODO: deserialize
         # data: Dict[
@@ -141,15 +129,17 @@ class WebSocketClient(websockets.client.WebSocketClientProtocol):
         #   user_roles: List[str]
         #   user_level: int
         #   user_avatar: str
-        #   message: List[Dict[
-        #       type: str
-        #       data: str
-        #       text: str
-        #   ]]
-        #   meta: Dict[]
-        # ]
+        #   message: Dict[
+        #     message: List[Dict[
+        #         type: str
+        #         data: str
+        #         text: str
+        #     ]]
+        #     meta: Dict[]
+        #    ]
+        #  ]
 
-        await self.dispatch('message')
+        await self.dispatch('message', message)
 
     async def reply_auth(self, sent: Packet, reply: Packet):
         print(reply.data)
