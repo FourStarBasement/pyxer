@@ -55,7 +55,7 @@ class WebSocketClient(websockets.client.WebSocketClientProtocol):
         try:
             msg = await self.recv()
         except websockets.exceptions.ConnectionClosed:
-            traceback.print_exc()
+            raise  # TODO: reconnect loop
         else:
             data = Packet.received(msg)
             if data.type == 'event':
@@ -115,11 +115,12 @@ class WebSocketClient(websockets.client.WebSocketClientProtocol):
         await self.dispatch('login')
     
     async def handle_user_join(self, message: Packet):
-
         await self.dispatch('user_join', message)
 
-    async def handle_chat_message(self, message: Packet):
+    async def handle_user_left(self, message: Packet):
+        await self.dispatch('user_left', message)
 
+    async def handle_chat_message(self, message: Packet):
         # TODO: deserialize
         # data: Dict[
         #   channel: int
@@ -142,8 +143,6 @@ class WebSocketClient(websockets.client.WebSocketClientProtocol):
         await self.dispatch('message', message)
 
     async def reply_auth(self, sent: Packet, reply: Packet):
-        print(reply.data)
-
         await self.dispatch('login_success')
 
     async def reply_msg(self, sent: Packet, reply: Packet):

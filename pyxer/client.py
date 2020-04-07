@@ -17,7 +17,7 @@ class MixerClient:
     current_user: Dict[str, Any]
     ws: WebSocketClient
 
-    def __init__(self, scopes: Scopes):
+    def __init__(self, *, scopes: Scopes):
         self.scopes = scopes
         self.http = HTTPClient()
         self.listeners = []
@@ -85,15 +85,18 @@ class MixerClient:
             if listener.name == event_name:
                 await listener.execute(*args, **kwargs)
 
-    def event(self, coro):
-        def wrapper():
+    def event(self, name: str=None):
+        def wrapper(coro):
             listener_name = ''
 
-            coro_name = coro.__name__
-            if coro_name.startswith('on_'):
-                listener_name = coro_name[3:]
+            if name:
+                listener_name = name
+            else:
+                coro_name = coro.__name__
+                if coro_name.startswith('on_'):
+                    listener_name = coro_name[3:]
 
             ret = Listener(name=listener_name, callback=coro)
             self.listeners.append(ret)
             return ret
-        return wrapper()
+        return wrapper
