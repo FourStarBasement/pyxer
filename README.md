@@ -1,2 +1,2 @@
 # pyxer
-Python Wrapper for Mixer Chat Bots.
+A Python Wrapper for Mixer Chat Bots.

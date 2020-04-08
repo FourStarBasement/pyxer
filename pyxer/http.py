@@ -1,24 +1,35 @@
-import asyncio
-import aiohttp
-
-from route import Route
+from typing import Dict, Optional, List
+from yarl import URL
+from aiohttp import ClientSession
 from mappings.channel import Channel, ExpandedChannel
 
 
+class HTTPConfig:
+    client_secret: str
+    client_id: str
+    access_token: str
+
+
 class HTTPClient:
-    def __init__(self, connector=None, *, loop=None):
+    def __init__(self):
+        self.config = HTTPConfig()
         self.session = None
-        self.loop = asyncio.get_event_loop() if loop is None else loop
-        self.connector = connector
 
-    async def init(self):
-        self.session = aiohttp.ClientSession(connector=self.connector, loop=self.loop)
+    async def init(self, client_secret: str, client_id: str):
+        self.session = ClientSession()
+        self.config.client_secret = client_secret
+        self.config.client_id = client_id
 
-    async def request(self, route, clazz=None, **kwargs):
-        method = route.method
-        url = route.url
+    def update_token(self, access_token: str):
+        self.config.access_token = access_token
 
-        async with self.session.request(method, url, **kwargs) as r:
+    async def request(self, verb: str, endpoint: str, *, query: Optional[Dict[str, str]]=None, data: Optional[Dict[str, str]]=None, headers: Optional[Dict[str, str]]={}, clazz=None):
+        url = URL.build(scheme="https", host="mixer.com", path=f"/api/v1/{endpoint}", query=query)
+
+        if hasattr(self.config, 'access_token'):
+            headers['Authorization'] = f'Bearer {self.config.access_token}'
+
+        async with self.session.request(verb, url, json=data, headers=headers) as r:
             data = await r.json() if r.headers['content-type'] == 'application/json' else await r.text(encoding='utf-8')
 
             if 300 > r.status >= 200:
@@ -32,7 +43,7 @@ class HTTPClient:
 
                 print(f"You are being ratelimited! Retrying request after {retry_after} seconds.")
                 await asyncio.sleep(retry_after)
-                request(route, kwargs)
+                await self.request(verb, endpoint, query=query, data=data, headers=headers, clazz=clazz)
 
                 return
 
@@ -41,6 +52,38 @@ class HTTPClient:
             elif r.status == 404:
                 raise Exception('Not Found.')
 
+    def get_shortcode(self, scope: List[str]):
+        scopes = " ".join(scope)
+        data = {
+            "client_id": self.config.client_id,
+            "client_secret": self.config.client_secret,
+            "scope": scopes
+        }
+        return self.request('POST', 'oauth/shortcode', data=data)
+
+    def verify_shortcode(self, handle: str):
+        return self.request('GET', f'oauth/shortcode/check/{handle}')
+
+    def get_tokens(self, token: str):
+        data = {
+            "client_id": self.config.client_id,
+            "client_secret": self.config.client_secret,
+            "grant_type": "authorization_code",
+            "code": token
+        }
+        return self.request('POST', 'oauth/token', data=data)
+
+    def refresh_tokens(self, token: str):
+        data = {
+            "client_id": self.config.client_id,
+            "client_secret": self.config.client_secret,
+            "grant_type": "refresh_token",
+            "refresh_token": token
+        }
+        return self.request('POST', 'oauth/token', data=data)
+
+    def get_current_user(self):
+        return self.request('GET', 'users/current')
 
     def get_channel_id(self, username: str):
         '''
@@ -52,9 +95,9 @@ class HTTPClient:
         Returns:
             json: The id of the requested user
         '''
-        return self.request(Route('GET', '/channels/{username}?fields=id', username=username))
+        return self.request('GET', f'/channels/{username}?fields=id')
 
-    def get_chat_info(self, channel_id: int):
+    def get_connection_info(self, channel_id: int):
         '''
         Gets the info of the supplied channel
 
@@ -64,12 +107,12 @@ class HTTPClient:
         Returns:
             json: The channels chatroom settings if authenticated
         '''
-        return self.request(Route('GET', '/chats/{channel_id}', channel_id=channel_id))
+        return self.request('GET', f'chats/{channel_id}')
 
     def get_channel(self, channel_identifier: str):
         '''
         '''
-        return self.request(Route('GET', '/channels/{channel_ident}', channel_ident=channel_identifier), clazz=ExpandedChannel)
+        return self.request('GET', f'channels/{channel_identifier}', clazz=ExpandedChannel)
 
     def get_ingests(self):
-        return self.request(Route('GET', '/ingests'))
+        return self.request('GET', 'ingests')
