@@ -4,10 +4,12 @@ from webbrowser import open_new
 
 from .http import HTTPClient
 from .ws import WebSocketClient
+from .cache import MixerCache
 from .scopes import Scopes
 from .oauth import OAuthHandler
 from .utils import as_go_link
 from .event import Listener
+from .mappings import Channel, ChatMessage, User
 
 
 class MixerClient:
@@ -16,6 +18,7 @@ class MixerClient:
     oauth: OAuthHandler
     current_user: Dict[str, Any]
     ws: WebSocketClient
+    cache: MixerCache
 
     def __init__(self, *, scopes: Scopes):
         self.scopes = scopes
@@ -51,14 +54,16 @@ class MixerClient:
 
         data = await self.http.get_current_user()
 
-        self.current_user = data
+        self.me = User(client=self, data=data)
 
     async def connect(self):
-        channel_id = self.current_user['channel']['id']
-        user_id = self.current_user['channel']['userId']
+        channel_id = self.me.channel.id
+        user_id = self.me.channel.user_id
 
         ws = WebSocketClient.start(self, channel_id=channel_id, user_id=user_id)
         self.ws = await asyncio.wait_for(ws, timeout=50.0)
+        self.cache = self.ws.cache
+
         while True:
             await self.ws.handle_message()
 
@@ -100,3 +105,19 @@ class MixerClient:
             self.listeners.append(ret)
             return ret
         return wrapper
+
+    async def find_channel(self, channel_id: str):
+        '''
+        Finds a channel. This will first check the cache if it is available,
+        then perform a request if not found.
+        '''
+        cached = self.cache.get_channel(channel_id)
+        if cached:
+            return cached
+
+        data = await self.http.get_channel(channel_id)
+
+        channel = Channel(client=self, data=data)
+        self.cache.set_channel(channel)
+
+        return channel

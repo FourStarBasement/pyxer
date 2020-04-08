@@ -1,7 +1,7 @@
 from typing import Dict, Optional, List
 from yarl import URL
 from aiohttp import ClientSession
-from mappings.channel import Channel, ExpandedChannel
+from .mappings.channel import Channel, ExpandedChannel
 
 
 class HTTPConfig:
@@ -23,20 +23,17 @@ class HTTPClient:
     def update_token(self, access_token: str):
         self.config.access_token = access_token
 
-    async def request(self, verb: str, endpoint: str, *, query: Optional[Dict[str, str]]=None, data: Optional[Dict[str, str]]=None, headers: Optional[Dict[str, str]]={}, clazz=None):
+    async def request(self, verb: str, endpoint: str, *, query: Optional[Dict[str, str]]=None, data: Optional[Dict[str, str]]=None, headers: Optional[Dict[str, str]]={}):
         url = URL.build(scheme="https", host="mixer.com", path=f"/api/v1/{endpoint}", query=query)
 
         if hasattr(self.config, 'access_token'):
             headers['Authorization'] = f'Bearer {self.config.access_token}'
 
         async with self.session.request(verb, url, json=data, headers=headers) as r:
-            data = await r.json() if r.headers['content-type'] == 'application/json' else await r.text(encoding='utf-8')
+            data = await r.json() if 'application/json' in r.headers.get('content-type', []) else await r.text(encoding='utf-8')
 
             if 300 > r.status >= 200:
-                if clazz:
-                    return clazz(**data)
-                else:
-                    return data
+                return data
 
             if r.status == 429:
                 retry_after = data['retry_after'] / 1000.0
@@ -90,7 +87,7 @@ class HTTPClient:
         Gets a single user's channel id
 
         Args:
-            username (str): The username whos channel you want to get
+            username (str): The username of the channel you want to get
 
         Returns:
             json: The id of the requested user
@@ -109,10 +106,17 @@ class HTTPClient:
         '''
         return self.request('GET', f'chats/{channel_id}')
 
-    def get_channel(self, channel_identifier: str):
+    def get_channel(self, channel_id: str):
         '''
+        Gets a single channel's info
+
+        Args:
+            channel_id (str): The channel ID
+
+        Returns:
+            json: The extended information of the requested channel
         '''
-        return self.request('GET', f'channels/{channel_identifier}', clazz=ExpandedChannel)
+        return self.request('GET', f'channels/{channel_id}')
 
     def get_ingests(self):
         return self.request('GET', 'ingests')

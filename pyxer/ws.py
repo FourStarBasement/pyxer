@@ -5,6 +5,7 @@ import traceback
 
 from .utils import get, as_snake_case
 from .cache import MixerCache
+from . import mappings
 
 
 class Packet:
@@ -47,7 +48,6 @@ class WebSocketClient(websockets.client.WebSocketClientProtocol):
         ws.user_id = user_id
         ws.uri = uri
         ws.auth_key = auth_key
-        ws.client_dispatch = client.dispatch
 
         return ws
 
@@ -107,7 +107,7 @@ class WebSocketClient(websockets.client.WebSocketClientProtocol):
                 await func(method, message)
     
     async def dispatch(self, event_name: str, *args, **kwargs):
-        await self.client_dispatch(event_name, *args, **kwargs)
+        await self.client.dispatch(event_name, *args, **kwargs)
 
     async def handle_welcome_event(self, message: Packet):
         await self.login(self.channel_id, self.user_id, self.auth_key)
@@ -115,35 +115,19 @@ class WebSocketClient(websockets.client.WebSocketClientProtocol):
         await self.dispatch('login')
     
     async def handle_user_join(self, message: Packet):
-        await self.dispatch('user_join', message)
+        user = mappings.PartialUser(client=self.client, data=message.data)
+        await self.dispatch('user_join', user)
 
     async def handle_user_left(self, message: Packet):
-        await self.dispatch('user_left', message)
+        user = mappings.PartialUser(client=self.client, data=message.data)
+        await self.dispatch('user_left', user)
 
     async def handle_chat_message(self, message: Packet):
-        # TODO: deserialize
-        # data: Dict[
-        #   channel: int
-        #   id: str
-        #   name: str
-        #   user_id: int
-        #   user_roles: List[str]
-        #   user_level: int
-        #   user_avatar: str
-        #   message: Dict[
-        #     message: List[Dict[
-        #         type: str
-        #         data: str
-        #         text: str
-        #     ]]
-        #     meta: Dict[]
-        #    ]
-        #  ]
-
+        message = await mappings.ChatMessage._received(client=self.client, data=message.data)
         await self.dispatch('message', message)
 
     async def reply_auth(self, sent: Packet, reply: Packet):
-        await self.dispatch('login_success')
+        await self.dispatch('ready')
 
     async def reply_msg(self, sent: Packet, reply: Packet):
-        print(sent.dumped, reply.dumped)
+        print(sent.dumped, reply.dumped) # TODO: change this.

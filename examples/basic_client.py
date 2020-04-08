@@ -9,34 +9,35 @@ s.chat = True
 
 mc = MixerClient(scopes=s)
 
-@mc.event("login_success")
-async def login_success():
+@mc.event("ready")
+async def client_ready():
     print('--------------------------')
     print('Logged In As:')
-    print('username:', mc.current_user['username'])
-    print('id:', mc.current_user['id'])
+    print('username:', mc.me.name)
+    print('id:', mc.me.id)
+    print('channel id:', mc.me.channel.id)
     print('---------------------------')
 
 @mc.event("user_join")
 async def user_join(user):
     print('User Joined:')
-    print('user name:', user.data['username'])
-    print('user id:', user.data['id'])
+    print('user name:', user.name)
+    print('user id:', user.id)
     print('---------------------------')
 
 @mc.event("user_left")
 async def user_left(user):
     print('User Left:')
-    print('user name:', user.data['username'])
-    print('user id:', user.data['id'])
+    print('user name:', user.name)
+    print('user id:', user.id)
     print('---------------------------')
 
 @mc.event("message")
-async def message_handler(message):
+async def message_handler(message: message.ChatMessage):
     print('New Message:')
-    print('content:', message.data['message']['message'][0]['text'])
-    print('author name:', message.data['user_name'])
-    print('author id:', message.data['user_id'])
+    print('channel id:', message.channel.id)
+    print('content:', message.content)
+    print('author id:', message.author.id)
     print('---------------------------')
 
 mc.run(secret='', id='')
